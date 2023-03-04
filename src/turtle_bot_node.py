@@ -21,17 +21,52 @@ import rospy
 import math
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
+import actionlib
+import random
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
+from geometry_msgs.msg import Pose, Point, Quaternion
+from actionlib_msgs.msg import *
 
 LINEAR_VEL = 0.22
-STOP_DISTANCE = 0.2
+STOP_DISTANCE = 2
 LIDAR_ERROR = 0.05
 SAFE_STOP_DISTANCE = STOP_DISTANCE + LIDAR_ERROR
-
+Obstacle_detected = False
+MAX_LIDAR_DISTANCE = 3.5
 class Obstacle():
     def __init__(self):
         self._cmd_pub = rospy.Publisher('cmd_vel', Twist, queue_size=1)
-        self.obstacle()
-        
+        self.move_base = actionlib.SimpleActionClient("move_base", MoveBaseAction)
+        rospy.loginfo("Wait for the action server to come up")
+        self.move_base.wait_for_server(rospy.Duration(5))
+        self.explore()
+        # self.obstacle()
+
+    def explore(self):
+        print("inside explore")
+
+        goal_x = MAX_LIDAR_DISTANCE*random.random()
+        goal_y = MAX_LIDAR_DISTANCE*random.random()
+        quat_r1 = 0.0
+        quat_r2 = 0.0
+        quat_r3 = 0.0
+        quat_r4 = 0.0
+        self.goal_sent = True
+        goal = MoveBaseGoal()
+        goal.target_pose.header.frame_id = 'map'
+        goal.target_pose.header.stamp = rospy.Time.now()
+        goal.target_pose.pose = Pose(Point(goal_x, goal_y, 0.000), Quaternion(quat_r1, quat_r2, quat_r3, quat_r4))
+        self.move_base.send_goal(goal)
+        print("goal given")
+        success = self.move_base.wait_for_result(rospy.Duration(60)) 
+        state = self.move_base.get_state()
+        result = False
+        if success and state == GoalStatus.SUCCEEDED:
+            goal_x = goal_x+MAX_LIDAR_DISTANCE*random()
+            goal_y = goal_y+MAX_LIDAR_DISTANCE*random()
+        else:
+            self.explore()
+
     def get_scan(self):
         scan = rospy.wait_for_message('scan', LaserScan)
         scan_filter = []
@@ -57,7 +92,7 @@ class Obstacle():
 
         for i in range(samples_view):
             if scan_filter[i] == float('Inf'):
-                scan_filter[i] = 3.5
+                scan_filter[i] = MAX_LIDAR_DISTANCE
             elif math.isnan(scan_filter[i]):
                 scan_filter[i] = 0
         
@@ -84,6 +119,7 @@ class Obstacle():
                 self._cmd_pub.publish(twist)
                 turtlebot_moving = True
                 rospy.loginfo('Distance of the obstacle : %f', min_distance)
+
 
 def main():
     rospy.init_node('turtlebot3_obstacle')
